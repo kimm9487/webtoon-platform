@@ -5,6 +5,7 @@ import { getCharacterById } from '@/lib/characterPresets';
 import { prisma } from '@/lib/prisma';
 import { bearerTokenFromRequest, verifyAuthToken } from '@/lib/server-auth';
 import { formatRagContext, retrieveCharacterKnowledge } from '@/lib/rag/vectorDb';
+import { resolveCharacterChatModel } from '@/lib/characterChatModels';
 
 type StoredChatMessage = {
   id: string;
@@ -15,8 +16,6 @@ type StoredChatMessage = {
 };
 
 const defaultLocalBaseUrl = 'http://localhost:11434/v1';
-const defaultLocalModel = 'exaone3.5:2.4b';
-
 function id(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
 }
@@ -149,6 +148,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const characterId = String(body.characterId || '').trim();
     const userMessage = String(body.message || '').trim();
+    const selectedModel = resolveCharacterChatModel(body.modelKey);
 
     if (!characterId || !userMessage) {
       return NextResponse.json(
@@ -174,7 +174,7 @@ export async function POST(request: Request) {
 
     const baseURL = process.env.LOCAL_LLM_BASE_URL || defaultLocalBaseUrl;
     const apiKey = process.env.LOCAL_LLM_API_KEY || 'local-llm';
-    const modelName = process.env.LOCAL_LLM_MODEL || defaultLocalModel;
+    const modelName = selectedModel.model;
 
     try {
       const health = await fetch(`${baseURL.replace(/\/$/, '')}/models`, {
@@ -251,7 +251,7 @@ ${ragContext}
       configuration: {
         baseURL,
       },
-      temperature: 0.8,
+      temperature: 0.7,
       maxTokens: 400,
       timeout: 30000,
     });
@@ -312,6 +312,8 @@ ${ragContext}
         avatar: character.avatar,
         provider: 'local',
         model: modelName,
+        modelKey: selectedModel.key,
+        modelLabel: selectedModel.label,
         ragMode: rag.mode,
         ragDocuments: rag.documents.map((document) => ({
           id: document.id,

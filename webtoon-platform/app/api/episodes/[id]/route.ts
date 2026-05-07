@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse, Episode } from '@/lib/types';
 import { prisma } from '@/lib/prisma';
+import { signedMediaUrl } from '@/lib/server-media-url';
 
 function formatEpisode(episode: {
   id: string;
@@ -20,7 +21,7 @@ function formatEpisode(episode: {
     episodeNumber: episode.episodeNumber,
     title: episode.title,
     description: episode.description ?? '',
-    images: Array.isArray(episode.images) ? episode.images.map(String) : [],
+    images: Array.isArray(episode.images) ? episode.images.map((image) => signedMediaUrl(String(image))) : [],
     views: episode.views,
     likes: episode.likes,
     createdAt: episode.createdAt.toISOString().split('T')[0],

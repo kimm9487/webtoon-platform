@@ -2,6 +2,15 @@
 
 declare(strict_types=1);
 
+if (PHP_SAPI === 'cli-server') {
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+    $file = __DIR__ . $path;
+
+    if (is_file($file)) {
+        return false;
+    }
+}
+
 require_once __DIR__ . '/../src/bootstrap.php';
 
 use App\Http\Request;
@@ -21,8 +30,10 @@ $router->put('/api/comments/{id}', 'CommentController@update');
 $router->delete('/api/comments/{id}', 'CommentController@destroy');
 
 $router->get('/api/search', 'SearchController@index');
+$router->get('/api/media/{token}', 'MediaController@show');
 
 $router->get('/api/author/dashboard', 'AuthorController@dashboard');
+$router->post('/api/author/uploads', 'UploadController@store');
 $router->post('/api/author/webtoons', 'AuthorController@createWebtoon');
 $router->put('/api/author/webtoons/{id}', 'AuthorController@updateWebtoon');
 $router->delete('/api/author/webtoons/{id}', 'AuthorController@deleteWebtoon');

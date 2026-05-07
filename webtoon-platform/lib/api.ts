@@ -8,11 +8,7 @@ const api = axios.create({
   timeout: 10000,
 });
 
-/**
- * 웹툰 관련 API 함수들
- */
 export const webtoonApi = {
-  // 모든 웹툰 조회
   getAll: async (): Promise<ApiResponse<Webtoon[]>> => {
     try {
       const response = await api.get('/webtoons');
@@ -23,7 +19,6 @@ export const webtoonApi = {
     }
   },
 
-  // 특정 웹툰 조회
   getById: async (id: string): Promise<ApiResponse<Webtoon>> => {
     try {
       const response = await api.get(`/webtoons/${id}`);
@@ -34,7 +29,6 @@ export const webtoonApi = {
     }
   },
 
-  // 웹툰 생성 (관리자용)
   create: async (webtoon: Omit<Webtoon, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<Webtoon>> => {
     try {
       const response = await api.post('/webtoons', webtoon);
@@ -45,7 +39,6 @@ export const webtoonApi = {
     }
   },
 
-  // 웹툰 업데이트 (관리자용)
   update: async (id: string, webtoon: Partial<Webtoon>): Promise<ApiResponse<Webtoon>> => {
     try {
       const response = await api.put(`/webtoons/${id}`, webtoon);
@@ -56,7 +49,6 @@ export const webtoonApi = {
     }
   },
 
-  // 웹툰 삭제 (관리자용)
   delete: async (id: string): Promise<ApiResponse<void>> => {
     try {
       const response = await api.delete(`/webtoons/${id}`);
@@ -68,11 +60,7 @@ export const webtoonApi = {
   },
 };
 
-/**
- * 에피소드 관련 API 함수들
- */
 export const episodeApi = {
-  // 특정 웹툰의 에피소드 조회
   getByWebtoonId: async (webtoonId: string): Promise<ApiResponse<Episode[]>> => {
     try {
       const response = await api.get(`/episodes?webtoonId=${webtoonId}`);
@@ -83,7 +71,6 @@ export const episodeApi = {
     }
   },
 
-  // 특정 에피소드 조회
   getById: async (id: string): Promise<ApiResponse<Episode>> => {
     try {
       const response = await api.get(`/episodes/${id}`);
@@ -94,7 +81,6 @@ export const episodeApi = {
     }
   },
 
-  // 에피소드 생성 (작가용)
   create: async (episode: Omit<Episode, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiResponse<Episode>> => {
     try {
       const response = await api.post('/episodes', episode);
@@ -105,7 +91,6 @@ export const episodeApi = {
     }
   },
 
-  // 에피소드 업데이트 (작가용)
   update: async (id: string, episode: Partial<Episode>): Promise<ApiResponse<Episode>> => {
     try {
       const response = await api.put(`/episodes/${id}`, episode);
@@ -116,7 +101,40 @@ export const episodeApi = {
     }
   },
 
-  // 에피소드 삭제 (작가용)
+  setLike: async (id: string, liked: boolean): Promise<ApiResponse<Episode>> => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const response = await api.post(
+        `/episodes/${id}/like`,
+        { liked },
+        {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to update episode like ${id}:`, error);
+      throw error;
+    }
+  },
+
+  getLike: async (id: string): Promise<ApiResponse<{ liked: boolean }>> => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+      const response = await api.get(`/episodes/${id}/like`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Failed to fetch episode like ${id}:`, error);
+      throw error;
+    }
+  },
+
   delete: async (id: string): Promise<ApiResponse<void>> => {
     try {
       const response = await api.delete(`/episodes/${id}`);

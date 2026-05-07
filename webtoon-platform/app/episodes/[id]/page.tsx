@@ -7,18 +7,21 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { useWebtoonStore } from '@/lib/store';
 import { episodeApi } from '@/lib/api';
-import { CommentItem, commentApi } from '@/lib/php-api';
+import { CommentItem, authApi, commentApi } from '@/lib/php-api';
+import { readEpisodeLiked, writeEpisodeLiked } from '@/lib/episode-likes';
 
 export default function EpisodeViewPage() {
   const params = useParams();
   const id = params.id as string;
   const commentsRef = useRef<HTMLDivElement>(null);
-  const { selectedEpisode, setSelectedEpisode, isLoading, setIsLoading, user } = useWebtoonStore();
+  const { selectedEpisode, setSelectedEpisode, isLoading, setIsLoading, user, setUser } = useWebtoonStore();
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [content, setContent] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLikeSubmitting, setIsLikeSubmitting] = useState(false);
   const [localLikes, setLocalLikes] = useState(0);
+  const [isLiked, setIsLiked] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -39,6 +42,49 @@ export default function EpisodeViewPage() {
 
     fetchEpisode();
   }, [id, setSelectedEpisode, setIsLoading]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+
+    if (!token || user) {
+      return;
+    }
+
+    authApi
+      .me()
+      .then((response) => {
+        if (response.success && response.data) {
+          setUser(response.data);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('auth_token');
+      });
+  }, [setUser, user]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!user) {
+        setIsLiked(false);
+        return;
+      }
+
+      setIsLiked(readEpisodeLiked(user.id, id));
+      episodeApi
+        .getLike(id)
+        .then((response) => {
+          if (response.success && response.data) {
+            writeEpisodeLiked(user.id, id, response.data.liked);
+            setIsLiked(response.data.liked);
+          }
+        })
+        .catch(() => {
+          // Keep the local fallback if the liked-state request fails.
+        });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [id, user]);
 
   useEffect(() => {
     const fetchComments = async () => {
@@ -88,15 +134,30 @@ export default function EpisodeViewPage() {
     }
   };
 
-  const handleLike = () => {
-    const likedKey = `liked_episode_${id}`;
+  const handleLike = async () => {
+    setError('');
 
-    if (localStorage.getItem(likedKey)) {
-      localStorage.removeItem(likedKey);
-      setLocalLikes((current) => Math.max(current - 1, 0));
-    } else {
-      localStorage.setItem(likedKey, '1');
-      setLocalLikes((current) => current + 1);
+    if (!user) {
+      setError('좋아요를 저장하려면 로그인이 필요합니다.');
+      return;
+    }
+
+    const nextLiked = !isLiked;
+
+    try {
+      setIsLikeSubmitting(true);
+      const response = await episodeApi.setLike(id, nextLiked);
+
+      if (response.success && response.data) {
+        writeEpisodeLiked(user.id, id, nextLiked);
+        setIsLiked(nextLiked);
+        setLocalLikes(response.data.likes);
+        setSelectedEpisode(response.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '좋아요 저장에 실패했습니다.');
+    } finally {
+      setIsLikeSubmitting(false);
     }
   };
 
@@ -161,8 +222,14 @@ export default function EpisodeViewPage() {
             <button
               type="button"
               onClick={handleLike}
-              className="flex-1 bg-purple-600 hover:bg-purple-700 px-4 py-3 rounded-md font-semibold transition"
+              disabled={isLikeSubmitting}
+              className={`relative flex-1 px-4 py-3 rounded-md font-semibold text-transparent transition disabled:opacity-60 ${
+                isLiked ? 'bg-pink-600 hover:bg-pink-700' : 'bg-purple-600 hover:bg-purple-700'
+              }`}
             >
+              <span className="absolute inset-0 flex items-center justify-center text-white">
+                {isLiked ? '좋아요 취소' : '좋아요'} {localLikes}
+              </span>
               좋아요 {localLikes}
             </button>
             <button

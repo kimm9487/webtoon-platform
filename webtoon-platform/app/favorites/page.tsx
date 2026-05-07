@@ -7,6 +7,7 @@ import Footer from '@/components/layout/Footer';
 import WebtoonCard from '@/components/webtoon/WebtoonCard';
 import { webtoonApi } from '@/lib/api';
 import { authApi } from '@/lib/php-api';
+import { migrateLegacyFavoriteIds, writeFavoriteIds } from '@/lib/favorites';
 import { Webtoon, User } from '@/lib/types';
 import { useWebtoonStore } from '@/lib/store';
 
@@ -39,7 +40,12 @@ export default function FavoritesPage() {
           }
         }
 
-        const ids = JSON.parse(localStorage.getItem('favorite_webtoons') || '[]') as string[];
+        if (!currentUser) {
+          setError('로그인이 필요합니다.');
+          return;
+        }
+
+        const ids = migrateLegacyFavoriteIds(currentUser.id);
         setFavoriteIds(ids);
 
         if (ids.length === 0) {
@@ -47,18 +53,18 @@ export default function FavoritesPage() {
           return;
         }
 
-        const results = await Promise.all(
-          ids.map(async (id) => {
-            try {
-              const response = await webtoonApi.getById(id);
-              return response.data || null;
-            } catch {
-              return null;
-            }
-          })
-        );
+        const response = await webtoonApi.getAll();
+        const webtoons = response.data || [];
+        const favoriteSet = new Set(ids);
+        const existingFavorites = webtoons.filter((webtoon) => favoriteSet.has(webtoon.id));
+        const existingIds = existingFavorites.map((webtoon) => webtoon.id);
 
-        setFavorites(results.filter((item): item is Webtoon => Boolean(item)));
+        if (existingIds.length !== ids.length) {
+          writeFavoriteIds(currentUser.id, existingIds);
+          setFavoriteIds(existingIds);
+        }
+
+        setFavorites(existingFavorites);
       } catch (err) {
         setError(err instanceof Error ? err.message : '즐겨찾기를 불러오지 못했습니다.');
       } finally {
@@ -70,8 +76,12 @@ export default function FavoritesPage() {
   }, [setUser, user]);
 
   const handleRemove = (id: string) => {
+    if (!user) {
+      return;
+    }
+
     const nextIds = favoriteIds.filter((favoriteId) => favoriteId !== id);
-    localStorage.setItem('favorite_webtoons', JSON.stringify(nextIds));
+    writeFavoriteIds(user.id, nextIds);
     setFavoriteIds(nextIds);
     setFavorites((current) => current.filter((webtoon) => webtoon.id !== id));
   };

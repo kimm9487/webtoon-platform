@@ -58,6 +58,14 @@ export interface EpisodePayload {
   images: string[];
 }
 
+export interface UploadedFile {
+  url: string;
+  path: string;
+  mime: string;
+  size: number;
+  originalName: string;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
@@ -75,6 +83,24 @@ async function request<T>(
 
   if (!response.ok) {
     throw new Error(data.error || 'Request failed.');
+  }
+
+  return data;
+}
+
+async function uploadRequest(path: string, formData: FormData): Promise<ApiResponse<UploadedFile>> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const response = await fetch(`${PHP_API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Upload failed.');
   }
 
   return data;
@@ -133,6 +159,12 @@ export const searchApi = {
 
 export const authorApi = {
   dashboard: () => request<AuthorDashboard>('/author/dashboard'),
+
+  uploadFile: (file: File, type: 'thumbnails' | 'episodes' | 'images' = 'images') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return uploadRequest(`/author/uploads?type=${encodeURIComponent(type)}`, formData);
+  },
 
   createWebtoon: (payload: WebtoonPayload) =>
     request<AuthorWebtoon>('/author/webtoons', {

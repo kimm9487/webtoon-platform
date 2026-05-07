@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { CharacterPreset, getAllCharacters } from '@/lib/characterPresets';
+import { CharacterChatModelKey, characterChatModelOptions } from '@/lib/characterChatModels';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -13,6 +14,8 @@ type ChatMessage = {
 };
 
 const characters = getAllCharacters();
+const modelOptions = characterChatModelOptions();
+const modelPreferenceKey = 'character_chat_model_key';
 
 export default function CharacterChatPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -24,6 +27,19 @@ export default function CharacterChatPage() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isDeletingHistory, setIsDeletingHistory] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [selectedModelKey, setSelectedModelKey] = useState<CharacterChatModelKey>('default');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedModelKey = localStorage.getItem(modelPreferenceKey);
+
+      if (savedModelKey === 'default' || savedModelKey === 'characterCreator') {
+        setSelectedModelKey(savedModelKey);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -67,6 +83,12 @@ export default function CharacterChatPage() {
 
   const handleSelectCharacter = (character: CharacterPreset) => {
     setSelectedCharacter(character);
+    setError('');
+  };
+
+  const handleSelectModel = (modelKey: CharacterChatModelKey) => {
+    setSelectedModelKey(modelKey);
+    localStorage.setItem(modelPreferenceKey, modelKey);
     setError('');
   };
 
@@ -146,6 +168,7 @@ export default function CharacterChatPage() {
         body: JSON.stringify({
           characterId: selectedCharacter.id,
           message: userMessage.content,
+          modelKey: selectedModelKey,
         }),
       });
       const data = await response.json();
@@ -250,6 +273,22 @@ export default function CharacterChatPage() {
                 <span className="text-xs text-gray-500">
                   {isLoggedIn ? '기록 저장 중' : '로그인 필요'}
                 </span>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <span className="hidden sm:inline">모델</span>
+                  <select
+                    value={selectedModelKey}
+                    onChange={(event) => handleSelectModel(event.target.value as CharacterChatModelKey)}
+                    disabled={isLoading}
+                    className="rounded-md border border-gray-300 bg-white px-2 py-2 text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:opacity-60"
+                    title={modelOptions.find((option) => option.key === selectedModelKey)?.description}
+                  >
+                    {modelOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   type="button"
                   onClick={handleDeleteHistory}

@@ -7,19 +7,21 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { useWebtoonStore } from '@/lib/store';
 import { webtoonApi, episodeApi } from '@/lib/api';
+import { authApi } from '@/lib/php-api';
+import {
+  migrateLegacyFavoriteIds,
+  readFavoriteIds,
+  writeFavoriteIds,
+  writeFavoriteLastSeenEpisode,
+} from '@/lib/favorites';
 
 export default function WebtoonDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const { selectedWebtoon, setSelectedWebtoon, isLoading, setIsLoading, episodes, setEpisodes } = useWebtoonStore();
-  const [isFavorite, setIsFavorite] = useState(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-
-    const favorites = JSON.parse(localStorage.getItem('favorite_webtoons') || '[]') as string[];
-    return favorites.includes(id);
-  });
+  const { selectedWebtoon, setSelectedWebtoon, isLoading, setIsLoading, episodes, setEpisodes, user, setUser } =
+    useWebtoonStore();
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteError, setFavoriteError] = useState('');
 
   useEffect(() => {
     const fetchWebtoon = async () => {
@@ -40,6 +42,40 @@ export default function WebtoonDetailPage() {
   }, [id, setSelectedWebtoon, setIsLoading]);
 
   useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+
+    if (!token || user) {
+      return;
+    }
+
+    authApi
+      .me()
+      .then((response) => {
+        if (response.success && response.data) {
+          setUser(response.data);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('auth_token');
+      });
+  }, [setUser, user]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!user) {
+        setIsFavorite(false);
+        return;
+      }
+
+      const favorites = migrateLegacyFavoriteIds(user.id);
+      setIsFavorite(favorites.includes(id));
+      setFavoriteError('');
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [id, user]);
+
+  useEffect(() => {
     const fetchEpisodes = async () => {
       try {
         const response = await episodeApi.getByWebtoonId(id);
@@ -55,12 +91,27 @@ export default function WebtoonDetailPage() {
   }, [id, setEpisodes]);
 
   const toggleFavorite = () => {
-    const favorites = JSON.parse(localStorage.getItem('favorite_webtoons') || '[]') as string[];
-    const nextFavorites = favorites.includes(id)
-      ? favorites.filter((favoriteId) => favoriteId !== id)
-      : [...favorites, id];
+    setFavoriteError('');
 
-    localStorage.setItem('favorite_webtoons', JSON.stringify(nextFavorites));
+    if (!user) {
+      setFavoriteError('즐겨찾기는 로그인 후 계정별로 저장됩니다.');
+      return;
+    }
+
+    const favorites = readFavoriteIds(user.id);
+    const isAlreadyFavorite = favorites.includes(id);
+    const nextFavorites = isAlreadyFavorite ? favorites.filter((favoriteId) => favoriteId !== id) : [...favorites, id];
+
+    writeFavoriteIds(user.id, nextFavorites);
+
+    if (!isAlreadyFavorite) {
+      const latestEpisodeNumber = episodes.reduce(
+        (latest, episode) => Math.max(latest, episode.episodeNumber),
+        0
+      );
+      writeFavoriteLastSeenEpisode(user.id, id, latestEpisodeNumber);
+    }
+
     setIsFavorite(nextFavorites.includes(id));
   };
 
@@ -165,6 +216,7 @@ export default function WebtoonDetailPage() {
                 </Link>
               )}
             </div>
+            {favoriteError && <p className="text-sm text-red-600 mt-3">{favoriteError}</p>}
           </div>
         </div>
 

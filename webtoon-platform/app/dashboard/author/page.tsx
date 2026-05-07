@@ -1,18 +1,19 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { authorApi, AuthorDashboard, AuthorWebtoon, EpisodePayload, WebtoonPayload } from '@/lib/php-api';
 import { episodeApi } from '@/lib/api';
+import { mediaUrl } from '@/lib/media-url';
 import { Episode } from '@/lib/types';
 import { useWebtoonStore } from '@/lib/store';
 
 const emptyWebtoon: WebtoonPayload = {
   title: '',
   description: '',
-  thumbnail: 'https://via.placeholder.com/300x400?text=New+Webtoon',
+  thumbnail: '',
   genre: [],
   status: 'ongoing',
 };
@@ -21,8 +22,10 @@ const emptyEpisode: EpisodePayload = {
   episodeNumber: 1,
   title: '',
   description: '',
-  images: ['https://via.placeholder.com/800x1200?text=Episode'],
+  images: [],
 };
+
+const allowedImageTypes = ['image/jpeg', 'image/png', 'image/gif'];
 
 export default function AuthorDashboardPage() {
   const { user, setUser } = useWebtoonStore();
@@ -33,12 +36,10 @@ export default function AuthorDashboardPage() {
   const [episodeForm, setEpisodeForm] = useState<EpisodePayload>(emptyEpisode);
   const [editingWebtoonId, setEditingWebtoonId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState(() =>
-    typeof window !== 'undefined' && !localStorage.getItem('auth_token') ? '로그인이 필요합니다.' : ''
-  );
-  const [isLoading, setIsLoading] = useState(() =>
-    typeof window !== 'undefined' ? Boolean(localStorage.getItem('auth_token')) : true
-  );
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+  const [uploadingEpisodeImages, setUploadingEpisodeImages] = useState(false);
 
   const selectedWebtoon = useMemo(
     () => dashboard?.webtoons.find((webtoon) => webtoon.id === selectedWebtoonId),
@@ -66,7 +67,11 @@ export default function AuthorDashboardPage() {
     const token = localStorage.getItem('auth_token');
 
     if (!token) {
-      return;
+      const timer = window.setTimeout(() => {
+        setError('로그인이 필요합니다.');
+        setIsLoading(false);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
     if (!user) {
@@ -82,7 +87,6 @@ export default function AuthorDashboardPage() {
     const timer = window.setTimeout(() => {
       loadDashboard();
     }, 0);
-
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setUser]);
@@ -105,10 +109,75 @@ export default function AuthorDashboardPage() {
     });
   }, [selectedWebtoonId]);
 
+  const uploadOne = async (file: File, type: 'thumbnails' | 'episodes') => {
+    if (!allowedImageTypes.includes(file.type)) {
+      throw new Error('JPG, PNG, GIF 파일만 업로드할 수 있습니다.');
+    }
+
+    const response = await authorApi.uploadFile(file, type);
+
+    if (!response.success || !response.data) {
+      throw new Error(response.error || '이미지 업로드에 실패했습니다.');
+    }
+
+    return response.data.path;
+  };
+
+  const handleThumbnailFiles = async (files: File[]) => {
+    const file = files[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setUploadingThumbnail(true);
+      setError('');
+      const url = await uploadOne(file, 'thumbnails');
+      setWebtoonForm((current) => ({ ...current, thumbnail: url }));
+      setMessage('썸네일 이미지를 업로드했습니다.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '썸네일 업로드에 실패했습니다.');
+    } finally {
+      setUploadingThumbnail(false);
+    }
+  };
+
+  const handleEpisodeImageFiles = async (files: File[]) => {
+    if (files.length === 0) {
+      return;
+    }
+
+    try {
+      setUploadingEpisodeImages(true);
+      setError('');
+      const urls: string[] = [];
+
+      for (const file of files) {
+        urls.push(await uploadOne(file, 'episodes'));
+      }
+
+      setEpisodeForm((current) => ({
+        ...current,
+        images: [...current.images, ...urls],
+      }));
+      setMessage('에피소드 이미지를 업로드했습니다.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '에피소드 이미지 업로드에 실패했습니다.');
+    } finally {
+      setUploadingEpisodeImages(false);
+    }
+  };
+
   const handleWebtoonSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setMessage('');
+
+    if (!webtoonForm.thumbnail) {
+      setError('썸네일 이미지를 업로드해 주세요.');
+      return;
+    }
 
     try {
       if (editingWebtoonId) {
@@ -153,9 +222,16 @@ export default function AuthorDashboardPage() {
 
   const handleEpisodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError('');
+    setMessage('');
 
     if (!selectedWebtoonId) {
       setError('먼저 웹툰을 선택하세요.');
+      return;
+    }
+
+    if (episodeForm.images.length === 0) {
+      setError('에피소드 이미지를 1개 이상 업로드해 주세요.');
       return;
     }
 
@@ -207,7 +283,9 @@ export default function AuthorDashboardPage() {
           <div>
             <p className="text-sm text-purple-700 font-semibold">Author</p>
             <h1 className="text-4xl font-bold text-gray-950">작가 대시보드</h1>
-            <p className="text-gray-600 mt-2">웹툰 업로드, 수정, 삭제와 에피소드 관리를 할 수 있습니다.</p>
+            <p className="text-gray-600 mt-2">
+              웹툰과 에피소드를 업로드하고 관리할 수 있습니다.
+            </p>
           </div>
           <Link href="/webtoons" className="text-purple-700 font-semibold hover:underline">
             공개 목록 보기
@@ -224,7 +302,11 @@ export default function AuthorDashboardPage() {
             )}
           </div>
         )}
-        {message && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-6">{message}</div>}
+        {message && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-6">
+            {message}
+          </div>
+        )}
 
         {dashboard && (
           <>
@@ -240,8 +322,23 @@ export default function AuthorDashboardPage() {
                   {editingWebtoonId ? '웹툰 수정' : '새 웹툰 업로드'}
                 </h2>
                 <form onSubmit={handleWebtoonSubmit} className="space-y-4">
-                  <TextInput label="제목" value={webtoonForm.title} onChange={(value) => setWebtoonForm({ ...webtoonForm, title: value })} />
-                  <TextInput label="썸네일 URL" value={webtoonForm.thumbnail} onChange={(value) => setWebtoonForm({ ...webtoonForm, thumbnail: value })} />
+                  <TextInput
+                    label="제목"
+                    value={webtoonForm.title}
+                    onChange={(value) => setWebtoonForm({ ...webtoonForm, title: value })}
+                  />
+                  <ImageUploader
+                    label="썸네일 이미지"
+                    multiple={false}
+                    isUploading={uploadingThumbnail}
+                    onFiles={handleThumbnailFiles}
+                  />
+                  {webtoonForm.thumbnail && (
+                    <ImagePreview
+                      urls={[webtoonForm.thumbnail]}
+                      onRemove={() => setWebtoonForm({ ...webtoonForm, thumbnail: '' })}
+                    />
+                  )}
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">설명</span>
                     <textarea
@@ -254,14 +351,21 @@ export default function AuthorDashboardPage() {
                   <TextInput
                     label="장르"
                     value={webtoonForm.genre.join(', ')}
-                    onChange={(value) => setWebtoonForm({ ...webtoonForm, genre: value.split(',').map((item) => item.trim()).filter(Boolean) })}
+                    onChange={(value) =>
+                      setWebtoonForm({
+                        ...webtoonForm,
+                        genre: value.split(',').map((item) => item.trim()).filter(Boolean),
+                      })
+                    }
                     placeholder="Fantasy, Action"
                   />
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">상태</span>
                     <select
                       value={webtoonForm.status}
-                      onChange={(event) => setWebtoonForm({ ...webtoonForm, status: event.target.value as WebtoonPayload['status'] })}
+                      onChange={(event) =>
+                        setWebtoonForm({ ...webtoonForm, status: event.target.value as WebtoonPayload['status'] })
+                      }
                       className="w-full border border-gray-300 rounded-md px-3 py-2"
                     >
                       <option value="ongoing">연재중</option>
@@ -313,7 +417,11 @@ export default function AuthorDashboardPage() {
                     value={String(episodeForm.episodeNumber)}
                     onChange={(value) => setEpisodeForm({ ...episodeForm, episodeNumber: Number(value) })}
                   />
-                  <TextInput label="제목" value={episodeForm.title} onChange={(value) => setEpisodeForm({ ...episodeForm, title: value })} />
+                  <TextInput
+                    label="제목"
+                    value={episodeForm.title}
+                    onChange={(value) => setEpisodeForm({ ...episodeForm, title: value })}
+                  />
                   <label className="block">
                     <span className="block text-sm font-medium text-gray-700 mb-1">설명</span>
                     <textarea
@@ -322,21 +430,23 @@ export default function AuthorDashboardPage() {
                       className="w-full min-h-20 border border-gray-300 rounded-md px-3 py-2"
                     />
                   </label>
-                  <label className="block">
-                    <span className="block text-sm font-medium text-gray-700 mb-1">이미지 URL</span>
-                    <textarea
-                      value={episodeForm.images.join('\n')}
-                      onChange={(event) =>
+                  <ImageUploader
+                    label="에피소드 이미지"
+                    multiple
+                    isUploading={uploadingEpisodeImages}
+                    onFiles={handleEpisodeImageFiles}
+                  />
+                  {episodeForm.images.length > 0 && (
+                    <ImagePreview
+                      urls={episodeForm.images}
+                      onRemove={(url) =>
                         setEpisodeForm({
                           ...episodeForm,
-                          images: event.target.value.split('\n').map((item) => item.trim()).filter(Boolean),
+                          images: episodeForm.images.filter((image) => image !== url),
                         })
                       }
-                      className="w-full min-h-28 border border-gray-300 rounded-md px-3 py-2"
-                      placeholder="한 줄에 이미지 URL 하나"
-                      required
                     />
-                  </label>
+                  )}
                   <button type="submit" className="bg-indigo-600 text-white px-5 py-2 rounded-md font-semibold hover:bg-indigo-700 transition">
                     에피소드 업로드
                   </button>
@@ -350,16 +460,22 @@ export default function AuthorDashboardPage() {
                 {dashboard.webtoons.length > 0 ? (
                   dashboard.webtoons.map((webtoon) => (
                     <div key={webtoon.id} className="flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gray-100 rounded-lg p-4">
-                      <div>
-                        <p className="font-bold text-gray-950">{webtoon.title}</p>
-                        <p className="text-sm text-gray-600">
-                          {webtoon.status} · 에피소드 {webtoon.episodeCount}개 · 조회 {Number(webtoon.views).toLocaleString()}
-                        </p>
+                      <div className="flex items-center gap-4">
+                        {webtoon.thumbnail && (
+                          <img
+                            src={mediaUrl(webtoon.thumbnail)}
+                            alt=""
+                            className="w-14 h-20 object-cover rounded-md border border-gray-200"
+                          />
+                        )}
+                        <div>
+                          <p className="font-bold text-gray-950">{webtoon.title}</p>
+                          <p className="text-sm text-gray-600">
+                            {webtoon.status} · 에피소드 {webtoon.episodeCount}개 · 조회 {Number(webtoon.views).toLocaleString()}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex gap-2 flex-wrap">
-                        <button onClick={() => setSelectedWebtoonId(webtoon.id)} className="border border-gray-300 px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-50">
-                          에피소드 보기
-                        </button>
                         <button onClick={() => handleEditWebtoon(webtoon)} className="border border-gray-300 px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-50">
                           수정
                         </button>
@@ -376,14 +492,23 @@ export default function AuthorDashboardPage() {
             </section>
 
             <section className="bg-white border border-gray-200 rounded-lg p-6">
-              <h2 className="text-xl font-bold text-gray-950 mb-2">{selectedWebtoon?.title || '선택된 웹툰'} 에피소드</h2>
+              <h2 className="text-xl font-bold text-gray-950 mb-2">{selectedWebtoon?.title || '선택한 웹툰'} 에피소드</h2>
               <div className="space-y-3 mt-5">
                 {episodes.length > 0 ? (
                   episodes.map((episode) => (
                     <div key={episode.id} className="flex flex-col md:flex-row md:items-center justify-between gap-3 border border-gray-100 rounded-lg p-4">
-                      <div>
-                        <p className="font-semibold">{episode.episodeNumber}화 {episode.title}</p>
-                        <p className="text-sm text-gray-600">조회 {episode.views.toLocaleString()} · 좋아요 {episode.likes.toLocaleString()}</p>
+                      <div className="flex items-center gap-4">
+                        {episode.images[0] && (
+                          <img
+                            src={mediaUrl(episode.images[0])}
+                            alt=""
+                            className="w-16 h-20 object-cover rounded-md border border-gray-200"
+                          />
+                        )}
+                        <div>
+                          <p className="font-semibold">{episode.episodeNumber}화 {episode.title}</p>
+                          <p className="text-sm text-gray-600">조회 {episode.views.toLocaleString()} · 좋아요 {episode.likes.toLocaleString()}</p>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Link href={`/episodes/${episode.id}`} className="border border-gray-300 px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-50">
@@ -443,5 +568,72 @@ function TextInput({
         required
       />
     </label>
+  );
+}
+
+function ImageUploader({
+  label,
+  multiple,
+  isUploading,
+  onFiles,
+}: {
+  label: string;
+  multiple: boolean;
+  isUploading: boolean;
+  onFiles: (files: File[]) => void;
+}) {
+  const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    onFiles(Array.from(event.dataTransfer.files));
+  };
+
+  return (
+    <label
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={handleDrop}
+      className="block border-2 border-dashed border-gray-300 rounded-lg p-5 text-center cursor-pointer hover:border-purple-400 hover:bg-purple-50 transition"
+    >
+      <span className="block text-sm font-semibold text-gray-800">{label}</span>
+      <span className="block text-sm text-gray-500 mt-1">
+        JPG, PNG, GIF 파일을 드래그하거나 클릭해서 선택
+      </span>
+      <span className="block text-xs text-gray-400 mt-1">
+        {multiple ? '여러 파일 업로드 가능' : '파일 1개만 업로드'}
+      </span>
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/gif"
+        multiple={multiple}
+        disabled={isUploading}
+        onChange={(event) => onFiles(Array.from(event.target.files || []))}
+        className="sr-only"
+      />
+      {isUploading && <span className="block text-sm text-purple-700 mt-3">업로드 중...</span>}
+    </label>
+  );
+}
+
+function ImagePreview({
+  urls,
+  onRemove,
+}: {
+  urls: string[];
+  onRemove: (url: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {urls.map((url) => (
+        <div key={url} className="relative border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+          <img src={mediaUrl(url)} alt="" className="w-full h-32 object-cover" />
+          <button
+            type="button"
+            onClick={() => onRemove(url)}
+            className="absolute top-2 right-2 bg-white border border-gray-300 text-gray-800 px-2 py-1 rounded text-xs font-semibold shadow-sm hover:bg-gray-50"
+          >
+            제거
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "php:dev": "php -S localhost:8000 -t php-backend/public php-backend/public/index.php",
+    "php:dev": "php -d upload_max_filesize=10M -d post_max_size=12M -S localhost:8000 -t php-backend/public php-backend/public/index.php",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

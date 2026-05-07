@@ -1,16 +1,28 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import WebtoonCard from '@/components/webtoon/WebtoonCard';
 import { useWebtoonStore } from '@/lib/store';
 import { webtoonApi } from '@/lib/api';
 import { searchApi } from '@/lib/php-api';
+import { Webtoon } from '@/lib/types';
+
+const sessionDismissedNewWebtoonKey = 'session_dismissed_new_webtoon_id';
+const hiddenTodayNewWebtoonKey = 'hidden_today_new_webtoon';
 
 export default function Home() {
   const { webtoons, setWebtoons, isLoading, setIsLoading } = useWebtoonStore();
   const [query, setQuery] = useState('');
+  const [featuredNewWebtoon, setFeaturedNewWebtoon] = useState<Webtoon | null>(null);
+
+  const latestWebtoon = useMemo(() => {
+    return [...webtoons].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )[0];
+  }, [webtoons]);
 
   useEffect(() => {
     const fetchWebtoons = async () => {
@@ -30,8 +42,59 @@ export default function Home() {
     fetchWebtoons();
   }, [setWebtoons, setIsLoading]);
 
+  useEffect(() => {
+    if (!latestWebtoon || query.trim()) {
+      return;
+    }
+
+    const sessionDismissedId = sessionStorage.getItem(sessionDismissedNewWebtoonKey);
+    const hiddenToday = JSON.parse(localStorage.getItem(hiddenTodayNewWebtoonKey) || 'null') as {
+      id?: string;
+      expiresAt?: number;
+    } | null;
+    const isHiddenToday =
+      hiddenToday?.id === latestWebtoon.id &&
+      typeof hiddenToday.expiresAt === 'number' &&
+      hiddenToday.expiresAt > Date.now();
+
+    if (hiddenToday?.expiresAt && hiddenToday.expiresAt <= Date.now()) {
+      localStorage.removeItem(hiddenTodayNewWebtoonKey);
+    }
+
+    if (sessionDismissedId !== latestWebtoon.id && !isHiddenToday) {
+      const timer = window.setTimeout(() => {
+        setFeaturedNewWebtoon(latestWebtoon);
+      }, 300);
+
+      return () => window.clearTimeout(timer);
+    }
+  }, [latestWebtoon, query]);
+
+  const closeNewWebtoonPopup = () => {
+    if (featuredNewWebtoon) {
+      sessionStorage.setItem(sessionDismissedNewWebtoonKey, featuredNewWebtoon.id);
+    }
+
+    setFeaturedNewWebtoon(null);
+  };
+
+  const hideNewWebtoonForToday = () => {
+    if (featuredNewWebtoon) {
+      localStorage.setItem(
+        hiddenTodayNewWebtoonKey,
+        JSON.stringify({
+          id: featuredNewWebtoon.id,
+          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+        })
+      );
+    }
+
+    setFeaturedNewWebtoon(null);
+  };
+
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setFeaturedNewWebtoon(null);
 
     try {
       setIsLoading(true);
@@ -58,7 +121,7 @@ export default function Home() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <h1 className="text-4xl md:text-5xl font-bold mb-4">웹툰 플랫폼</h1>
             <p className="text-lg md:text-xl mb-8 text-gray-300">
-              인기 웹툰을 찾고, 에피소드를 읽고, 댓글로 감상을 남겨보세요.
+              인기 웹툰을 찾고, 에피소드를 읽고, 즐겨찾기로 감상해보세요.
             </p>
             <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 max-w-2xl">
               <input
@@ -104,6 +167,67 @@ export default function Home() {
       </main>
 
       <Footer />
+
+      {featuredNewWebtoon && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="relative w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-2xl">
+            <button
+              type="button"
+              onClick={closeNewWebtoonPopup}
+              className="absolute right-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1 text-sm font-bold text-gray-900 shadow hover:bg-white"
+              aria-label="신작 팝업 닫기"
+            >
+              닫기
+            </button>
+
+            <div className="grid md:grid-cols-[280px_1fr]">
+              <div className="bg-gray-100">
+                <img
+                  src={featuredNewWebtoon.thumbnail}
+                  alt={featuredNewWebtoon.title}
+                  className="h-80 w-full object-cover md:h-full"
+                />
+              </div>
+              <div className="p-8">
+                <p className="text-sm font-bold text-purple-700">NEW RELEASE</p>
+                <h2 className="mt-2 text-3xl font-bold text-gray-950">
+                  새 신작이 올라왔어요
+                </h2>
+                <h3 className="mt-4 text-2xl font-bold text-gray-900">
+                  {featuredNewWebtoon.title}
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">작가 {featuredNewWebtoon.author}</p>
+                <p className="mt-4 line-clamp-4 text-gray-700">
+                  {featuredNewWebtoon.description}
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {featuredNewWebtoon.genre.slice(0, 4).map((genre) => (
+                    <span key={genre} className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-8 flex gap-3">
+                  <Link
+                    href={`/webtoons/${featuredNewWebtoon.id}`}
+                    onClick={closeNewWebtoonPopup}
+                    className="rounded-md bg-purple-600 px-5 py-3 text-sm font-bold text-white hover:bg-purple-700"
+                  >
+                    지금 보러가기
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={hideNewWebtoonForToday}
+                    className="rounded-md border border-gray-300 px-5 py-3 text-sm font-bold text-gray-800 hover:bg-gray-50"
+                  >
+                    오늘 하루 안보기
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

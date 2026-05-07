@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse, Webtoon } from '@/lib/types';
 import { prisma } from '@/lib/prisma';
+import { signedMediaUrl } from '@/lib/server-media-url';
 
 function formatWebtoon(webtoon: {
   id: string;
@@ -24,7 +25,7 @@ function formatWebtoon(webtoon: {
     title: webtoon.title,
     author: webtoon.author.user.username,
     description: webtoon.description,
-    thumbnail: webtoon.thumbnail,
+    thumbnail: signedMediaUrl(webtoon.thumbnail),
     genre: Array.isArray(webtoon.genre) ? webtoon.genre.map(String) : [],
     status: webtoon.status.toLowerCase() as Webtoon['status'],
     rating: webtoon.rating,
