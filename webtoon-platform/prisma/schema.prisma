@@ -1,0 +1,136 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// 사용자 모델
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  profileImage String?
+  bio       String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 관계
+  comments Comment[]
+  likes    Like[]
+  author   Author?
+
+  @@map("users")
+}
+
+// 작가 모델 (User와 분리하여 확장성 고려)
+model Author {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  name      String
+  bio       String?
+  profileImage String?
+  followers Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 관계
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  webtoons Webtoon[]
+
+  @@map("authors")
+}
+
+// 웹툰 모델
+model Webtoon {
+  id          String      @id @default(cuid())
+  title       String
+  authorId    String
+  description String      @db.Text
+  thumbnail   String
+  genre       Json        // JSON 배열로 저장
+  status      WebtoonStatus @default(ONGOING)
+  rating      Float       @default(0)
+  views       Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // 관계
+  author   Author    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+  likes    Like[]
+
+  @@map("webtoons")
+}
+
+// 에피소드 모델
+model Episode {
+  id            String   @id @default(cuid())
+  webtoonId     String
+  episodeNumber Int
+  title         String
+  description   String?  @db.Text
+  images        Json     // JSON 배열로 저장
+  views         Int      @default(0)
+  likes         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // 관계
+  webtoon Webtoon  @relation(fields: [webtoonId], references: [id], onDelete: Cascade)
+  comments Comment[]
+
+  @@unique([webtoonId, episodeNumber])
+  @@map("episodes")
+}
+
+// 댓글 모델
+model Comment {
+  id        String   @id @default(cuid())
+  userId    String
+  episodeId String
+  content   String   @db.Text
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 관계
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+// 좋아요 모델 (웹툰과 사용자 간 다대다 관계)
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  webtoonId String
+  createdAt DateTime @default(now())
+
+  // 관계
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  webtoon Webtoon @relation(fields: [webtoonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, webtoonId])
+  @@map("likes")
+}
+
+// 열거형 정의
+enum UserRole {
+  USER
+  AUTHOR
+  ADMIN
+}
+
+enum WebtoonStatus {
+  ONGOING
+  COMPLETED
+  HIATUS
+}

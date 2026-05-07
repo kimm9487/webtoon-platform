@@ -1,0 +1,42 @@
+{
+  "name": "webtoon-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "php:dev": "php -S localhost:8000 -t php-backend/public php-backend/public/index.php",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@langchain/openai": "^1.4.5",
+    "@prisma/adapter-mariadb": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "axios": "^1.16.0",
+    "langchain": "^1.4.0",
+    "mariadb": "^3.5.2",
+    "mysql2": "^3.22.3",
+    "next": "16.2.5",
+    "prisma": "^7.8.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "zustand": "^5.0.13"
+    
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.5",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+  
+}
